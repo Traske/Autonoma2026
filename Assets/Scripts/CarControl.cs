@@ -1,81 +1,158 @@
-using System.Collections;
-using System.Collections.Generic;
+
 using UnityEngine;
 
 public class CarControl : MonoBehaviour
 {
-    public float enginePower = 2000.0f; // Engine power
-    public float turnSpeed = 25.0f; // Maximum turn speed
-    public float turnSmoothness = 5.0f; // Turn smoothness
-    public Transform[] wheels; // Array of Wheel Collider components
-    public Transform[] wheelMeshes; // Array of wheel meshes
-    public Transform centerOfMass; // Center of Mass point
+    public float enginePower = 2000f;
+    public float turnSpeed = 25f;
+    public float turnSmoothness = 5f;
+
+    public Transform[] wheels;
+    public Transform[] wheelMeshes;
+    public Transform centerOfMass;
     public GameObject steeringWheel;
 
-    private Rigidbody rb; // Car's Rigidbody component
-    private float currentTurnAngle = 0.0f;
+    public bool useAgentInput = false;
+
+    private float agentSteering;
+    private float agentThrottle;
+
+    private Rigidbody rb;
+    private float currentTurnAngle;
+
+    public void SetAgentInput(float steering, float throttle)
+    {
+        agentSteering = Mathf.Clamp(steering, -1f, 1f);
+        agentThrottle = Mathf.Clamp(throttle, -1f, 1f);
+    }
+
+    public void StopAgentInput()
+    {
+        agentSteering = 0f;
+        agentThrottle = 0f;
+    }
+
+    public void ApplyBrakes(float brakeForce)
+    {
+        if (wheels == null)
+            return;
+
+        foreach (Transform wheelTransform in wheels)
+        {
+            if (wheelTransform == null)
+                continue;
+
+            WheelCollider wheel =
+                wheelTransform.GetComponent<WheelCollider>();
+
+            if (wheel == null)
+                continue;
+
+            wheel.motorTorque = 0f;
+            wheel.brakeTorque = brakeForce;
+        }
+    }
+
+    public void ReleaseBrakes()
+    {
+        if (wheels == null)
+            return;
+
+        foreach (Transform wheelTransform in wheels)
+        {
+            if (wheelTransform == null)
+                continue;
+
+            WheelCollider wheel =
+                wheelTransform.GetComponent<WheelCollider>();
+
+            if (wheel != null)
+                wheel.brakeTorque = 0f;
+        }
+    }
 
     void Start()
     {
         rb = GetComponent<Rigidbody>();
-        rb.centerOfMass = centerOfMass.localPosition; // Set center of mass
+
+        if (rb != null && centerOfMass != null)
+            rb.centerOfMass = centerOfMass.localPosition;
     }
 
     void FixedUpdate()
     {
-        float horizontalInput = 0.0f;
-        
-        if (Input.GetKey(KeyCode.LeftArrow))
+        if (rb == null)
+            return;
+
+        float steering = 0f;
+        float throttle = 0f;
+
+        if (useAgentInput)
         {
-            horizontalInput = -1.0f;
+            steering = agentSteering;
+            throttle = agentThrottle;
         }
-        
-        else if (Input.GetKey(KeyCode.RightArrow))
+        else
         {
-            horizontalInput = 1.0f;
+            if (Input.GetKey(KeyCode.LeftArrow))
+                steering = -1f;
+            else if (Input.GetKey(KeyCode.RightArrow))
+                steering = 1f;
+
+            if (Input.GetKey(KeyCode.UpArrow))
+                throttle = 1f;
+            else if (Input.GetKey(KeyCode.DownArrow))
+                throttle = -1f;
         }
 
-        float throttle = 0.0f;
-        
-        if (Input.GetKey(KeyCode.UpArrow))
+        float targetAngle = steering * turnSpeed;
+
+        currentTurnAngle = Mathf.Lerp(
+            currentTurnAngle,
+            targetAngle,
+            Time.fixedDeltaTime * turnSmoothness
+        );
+
+        if (steeringWheel != null)
         {
-            throttle = 1.0f;
-        }
-        
-        else if (Input.GetKey(KeyCode.DownArrow))
-        {
-            throttle = -1.0f;
+            steeringWheel.transform.localEulerAngles =
+                new Vector3(-64f, 0f, currentTurnAngle * 3f);
         }
 
-        // Calculate turn angle
-        float targetTurnAngle = horizontalInput * turnSpeed;
-        currentTurnAngle = Mathf.Lerp(currentTurnAngle, targetTurnAngle, Time.deltaTime * turnSmoothness);
+        if (wheels == null)
+            return;
 
-        steeringWheel.transform.localEulerAngles = new Vector3(-64, 0, currentTurnAngle * 3);
-
-
-        // Wheels rotation and steering
         for (int i = 0; i < wheels.Length; i++)
         {
-            WheelCollider wheelCollider = wheels[i].GetComponent<WheelCollider>();
-            if (i < 2) // First two wheels steer
-            {
-                wheelCollider.steerAngle = currentTurnAngle;
-            }
+            if (wheels[i] == null)
+                continue;
+
+            WheelCollider wheel =
+                wheels[i].GetComponent<WheelCollider>();
+
+            if (wheel == null)
+                continue;
+
+            wheel.steerAngle = i < 2 ? currentTurnAngle : 0f;
+
+            // Do not apply engine torque while braking.
+            if (wheel.brakeTorque > 0f)
+                wheel.motorTorque = 0f;
             else
+                wheel.motorTorque = throttle * enginePower;
+
+            if (wheelMeshes != null &&
+                i < wheelMeshes.Length &&
+                wheelMeshes[i] != null)
             {
-                wheelCollider.steerAngle = 0f; // Other two wheels remain straight
+                wheel.GetWorldPose(
+                    out Vector3 position,
+                    out Quaternion rotation
+                );
+
+                wheelMeshes[i].position = position;
+                wheelMeshes[i].rotation = rotation;
             }
-
-            // Wheels driving (forward/backward movement)
-            wheelCollider.motorTorque = throttle * enginePower;
-
-            // Rotate wheel meshes
-            Quaternion wheelRotation;
-            Vector3 wheelPosition;
-            wheelCollider.GetWorldPose(out wheelPosition, out wheelRotation);
-            wheelMeshes[i].position = wheelPosition;
-            wheelMeshes[i].rotation = wheelRotation;
         }
     }
 }
