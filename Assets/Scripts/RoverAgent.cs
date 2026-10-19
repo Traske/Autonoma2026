@@ -6,20 +6,31 @@ using Unity.MLAgents.Sensors;
 
 public class RoverAgent : Agent
 {
+    [Header("References")]
     public Transform meetingPoint;
     public Rigidbody roverRigidbody;
     public CarControl carControl;
+    public Terrain terrain;
 
+    [Header("Random Spawning")]
+    public float edgeMargin = 20f;
+    public float minTargetDistance = 30f;
+    public int maxSpawnAttempts = 100;
+
+    [Header("Navigation")]
     public int maxDecisions = 2000;
     public float successDistance = 3f;
 
-    public float brakingDistance = 8f;
-    public float brakeForce = 3000f;
-    public float stopSpeed = 0.15f;
+    [Header("Braking")]
+    public float brakingDistance = 12f;
+    public float brakeStartDistance = 6f;
+    public float brakeForce = 4500f;
+    public float stopSpeed = 0.10f;
     public float stopRotationSpeed = 0.1f;
 
-    private Vector3 startPosition;
-    private Quaternion startRotation;
+    private float roverHeightOffset;
+    private float targetHeightOffset;
+
     private float previousDistance;
     private int decisionCount;
     private int stoppedDecisions;
@@ -35,17 +46,36 @@ public class RoverAgent : Agent
         if (carControl == null)
             carControl = GetComponent<CarControl>();
 
-        startPosition = transform.position;
-        startRotation = transform.rotation;
+        if (roverRigidbody == null || carControl == null)
+        {
+            Debug.LogError(
+                "RoverAgent needs a Rigidbody and CarControl."
+            );
+            return;
+        }
+
+        if (terrain != null && meetingPoint != null)
+        {
+            roverHeightOffset =
+                transform.position.y -
+                GetTerrainHeight(transform.position);
+
+            targetHeightOffset =
+                meetingPoint.position.y -
+                GetTerrainHeight(meetingPoint.position);
+        }
 
         MaxStep = maxDecisions;
     }
 
     public override void OnEpisodeBegin()
     {
-        // Reset only when a new episode actually begins.
-        roverRigidbody.position = startPosition;
-        roverRigidbody.rotation = startRotation;
+        if (roverRigidbody == null || carControl == null)
+            return;
+
+        // Randomize the car and target at the start of each episode.
+        RandomizeSpawnPositions();
+
         roverRigidbody.linearVelocity = Vector3.zero;
         roverRigidbody.angularVelocity = Vector3.zero;
 
@@ -54,12 +84,103 @@ public class RoverAgent : Agent
 
         decisionCount = 0;
         stoppedDecisions = 0;
+
         isParking = false;
         hasParked = false;
 
         previousDistance = GetDistanceToTarget();
 
-        Debug.Log("New episode started.");
+        Debug.Log(
+            "New episode: random car and MeetingPoint positions."
+        );
+    }
+
+    private float GetTerrainHeight(Vector3 position)
+    {
+        return terrain.SampleHeight(position)
+            + terrain.transform.position.y;
+    }
+
+    private Vector3 GetRandomTerrainPosition(float heightOffset)
+    {
+        Vector3 origin = terrain.transform.position;
+        Vector3 size = terrain.terrainData.size;
+
+        float marginX = Mathf.Min(edgeMargin, size.x * 0.25f);
+        float marginZ = Mathf.Min(edgeMargin, size.z * 0.25f);
+
+        float x = Random.Range(
+            origin.x + marginX,
+            origin.x + size.x - marginX
+        );
+
+        float z = Random.Range(
+            origin.z + marginZ,
+            origin.z + size.z - marginZ
+        );
+
+        Vector3 position = new Vector3(x, 0f, z);
+        position.y = GetTerrainHeight(position) + heightOffset;
+
+        return position;
+    }
+
+    private void RandomizeSpawnPositions()
+    {
+        if (terrain == null || meetingPoint == null)
+        {
+            Debug.LogWarning(
+                "Assign Terrain and MeetingPoint in RoverAgent."
+            );
+            return;
+        }
+
+        Vector3 roverSpawn = transform.position;
+        Vector3 targetSpawn = meetingPoint.position;
+
+        bool foundPositions = false;
+
+        for (int i = 0; i < maxSpawnAttempts; i++)
+        {
+            roverSpawn =
+                GetRandomTerrainPosition(roverHeightOffset);
+
+            targetSpawn =
+                GetRandomTerrainPosition(targetHeightOffset);
+
+            Vector2 roverXZ =
+                new Vector2(roverSpawn.x, roverSpawn.z);
+
+            Vector2 targetXZ =
+                new Vector2(targetSpawn.x, targetSpawn.z);
+
+            if (Vector2.Distance(roverXZ, targetXZ)
+                >= minTargetDistance)
+            {
+                foundPositions = true;
+                break;
+            }
+        }
+
+        if (!foundPositions)
+        {
+            Debug.LogWarning(
+                "Could not find positions far enough apart. " +
+                "Check Terrain size or reduce Min Target Distance."
+            );
+        }
+
+        // Random car position and direction.
+        roverRigidbody.position = roverSpawn;
+
+        roverRigidbody.rotation = Quaternion.Euler(
+            0f,
+            Random.Range(0f, 360f),
+            0f
+        );
+
+        // Random MeetingPoint position.
+        meetingPoint.position = targetSpawn;
     }
 
     private float GetDistanceToTarget()
@@ -81,7 +202,9 @@ public class RoverAgent : Agent
         direction.y = 0f;
 
         Vector3 localDirection =
-            transform.InverseTransformDirection(direction.normalized);
+            transform.InverseTransformDirection(
+                direction.normalized
+            );
 
         Vector3 localVelocity =
             transform.InverseTransformDirection(
@@ -96,7 +219,10 @@ public class RoverAgent : Agent
 
     public override void OnActionReceived(ActionBuffers actions)
     {
-        // Keep the rover parked after successful arrival.
+        if (roverRigidbody == null || carControl == null)
+            return;
+
+        // Keep the rover parked after success.
         if (hasParked)
         {
             carControl.StopAgentInput();
@@ -112,13 +238,15 @@ public class RoverAgent : Agent
 
         float distance = GetDistanceToTarget();
 
-        // Brake and confirm that the rover has fully stopped.
+        // Brake until the rover is stationary.
         if (isParking)
         {
             carControl.StopAgentInput();
             carControl.ApplyBrakes(brakeForce);
 
-            float speed = roverRigidbody.linearVelocity.magnitude;
+            float speed =
+                roverRigidbody.linearVelocity.magnitude;
+
             float rotationSpeed =
                 roverRigidbody.angularVelocity.magnitude;
 
@@ -144,25 +272,25 @@ public class RoverAgent : Agent
                 roverRigidbody.linearVelocity = Vector3.zero;
                 roverRigidbody.angularVelocity = Vector3.zero;
 
-                Debug.Log(
-                    "SUCCESS! Rover parked inside MeetingPoint. " +
-                    "Waiting for the next episode."
-                );
+                Debug.Log("SUCCESS! Rover parked.");
             }
 
             return;
         }
 
-        // Read the trained model's driving actions.
         float steering = Mathf.Clamp(
-            actions.ContinuousActions[0], -1f, 1f
+            actions.ContinuousActions[0],
+            -1f,
+            1f
         );
 
         float throttle = Mathf.Clamp(
-            actions.ContinuousActions[1], 0f, 1f
+            actions.ContinuousActions[1],
+            0f,
+            1f
         );
 
-        // Begin braking when the rover enters the target area.
+        // Start parking when the target is reached.
         if (distance <= successDistance)
         {
             isParking = true;
@@ -171,23 +299,33 @@ public class RoverAgent : Agent
             carControl.StopAgentInput();
             carControl.ApplyBrakes(brakeForce);
 
-            Debug.Log("MeetingPoint reached. Braking to a stop.");
+            Debug.Log("Target reached. Braking to a stop.");
 
             return;
         }
 
-        // Reduce throttle while approaching the MeetingPoint.
+        // Reduce throttle gradually when approaching.
         if (distance <= brakingDistance)
         {
             float range = Mathf.Max(
-                0.01f, brakingDistance - successDistance
+                0.01f,
+                brakingDistance - successDistance
             );
 
             float throttleScale = Mathf.Clamp01(
                 (distance - successDistance) / range
             );
 
-            throttle *= throttleScale;
+            throttle *= throttleScale * throttleScale;
+        }
+
+        // Apply brakes only in the closer braking zone.
+        float speedNow =
+            roverRigidbody.linearVelocity.magnitude;
+
+        if (distance <= brakeStartDistance &&
+            speedNow > stopSpeed)
+        {
             carControl.ApplyBrakes(brakeForce);
         }
         else
@@ -197,21 +335,20 @@ public class RoverAgent : Agent
 
         carControl.SetAgentInput(steering, throttle);
 
-        // Reward progress toward the target.
         float progress = previousDistance - distance;
 
-        AddReward(Mathf.Clamp(progress * 0.1f, -0.1f, 0.1f));
+        AddReward(
+            Mathf.Clamp(progress * 0.1f, -0.1f, 0.1f)
+        );
+
         AddReward(-0.002f);
 
         previousDistance = distance;
 
-        // End unsuccessful episodes only.
+        // Failed episodes reset automatically.
         if (decisionCount >= maxDecisions)
         {
-            Debug.Log(
-                $"FAILED: Decision limit reached. " +
-                $"Distance remaining: {distance:F2} m"
-            );
+            Debug.Log("FAILED: Decision limit reached.");
 
             carControl.StopAgentInput();
             carControl.ReleaseBrakes();
@@ -226,7 +363,8 @@ public class RoverAgent : Agent
 
         actions[0] = Input.GetAxis("Horizontal");
         actions[1] = Mathf.Max(
-            0f, Input.GetAxis("Vertical")
+            0f,
+            Input.GetAxis("Vertical")
         );
     }
 }

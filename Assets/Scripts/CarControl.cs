@@ -3,15 +3,18 @@ using UnityEngine;
 
 public class CarControl : MonoBehaviour
 {
+    [Header("Driving")]
     public float enginePower = 2000f;
     public float turnSpeed = 25f;
     public float turnSmoothness = 5f;
 
+    [Header("Vehicle References")]
     public Transform[] wheels;
     public Transform[] wheelMeshes;
     public Transform centerOfMass;
     public GameObject steeringWheel;
 
+    [Header("Agent Control")]
     public bool useAgentInput = false;
 
     private float agentSteering;
@@ -49,7 +52,7 @@ public class CarControl : MonoBehaviour
                 continue;
 
             wheel.motorTorque = 0f;
-            wheel.brakeTorque = brakeForce;
+            wheel.brakeTorque = Mathf.Max(0f, brakeForce);
         }
     }
 
@@ -71,7 +74,7 @@ public class CarControl : MonoBehaviour
         }
     }
 
-    void Start()
+    private void Start()
     {
         rb = GetComponent<Rigidbody>();
 
@@ -79,7 +82,7 @@ public class CarControl : MonoBehaviour
             rb.centerOfMass = centerOfMass.localPosition;
     }
 
-    void FixedUpdate()
+    private void FixedUpdate()
     {
         if (rb == null)
             return;
@@ -87,6 +90,7 @@ public class CarControl : MonoBehaviour
         float steering = 0f;
         float throttle = 0f;
 
+        // Use either AI input or manual keyboard input.
         if (useAgentInput)
         {
             steering = agentSteering;
@@ -116,7 +120,11 @@ public class CarControl : MonoBehaviour
         if (steeringWheel != null)
         {
             steeringWheel.transform.localEulerAngles =
-                new Vector3(-64f, 0f, currentTurnAngle * 3f);
+                new Vector3(
+                    -64f,
+                    0f,
+                    currentTurnAngle * 3f
+                );
         }
 
         if (wheels == null)
@@ -133,14 +141,17 @@ public class CarControl : MonoBehaviour
             if (wheel == null)
                 continue;
 
-            wheel.steerAngle = i < 2 ? currentTurnAngle : 0f;
+            // Front wheels steer.
+            wheel.steerAngle =
+                i < 2 ? currentTurnAngle : 0f;
 
-            // Do not apply engine torque while braking.
+            // Braking overrides motor torque.
             if (wheel.brakeTorque > 0f)
                 wheel.motorTorque = 0f;
             else
                 wheel.motorTorque = throttle * enginePower;
 
+            // Update the visible wheel mesh.
             if (wheelMeshes != null &&
                 i < wheelMeshes.Length &&
                 wheelMeshes[i] != null)

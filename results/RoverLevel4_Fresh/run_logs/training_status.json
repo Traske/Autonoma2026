@@ -1,0 +1,29 @@
+{
+    "RoverBehavior": {
+        "checkpoints": [
+            {
+                "steps": 3120,
+                "file_path": "results\\RoverLevel4_Fresh\\RoverBehavior\\RoverBehavior-3120.onnx",
+                "reward": 2.4918222799897194,
+                "creation_time": 1792440195.116058,
+                "auxillary_file_paths": [
+                    "results\\RoverLevel4_Fresh\\RoverBehavior\\RoverBehavior-3120.pt"
+                ]
+            }
+        ],
+        "final_checkpoint": {
+            "steps": 3120,
+            "file_path": "results\\RoverLevel4_Fresh\\RoverBehavior.onnx",
+            "reward": 2.4918222799897194,
+            "creation_time": 1792440195.116058,
+            "auxillary_file_paths": [
+                "results\\RoverLevel4_Fresh\\RoverBehavior\\RoverBehavior-3120.pt"
+            ]
+        }
+    },
+    "metadata": {
+        "stats_format_version": "0.3.0",
+        "mlagents_version": "1.1.0",
+        "torch_version": "2.1.1+cpu"
+    }
+}
