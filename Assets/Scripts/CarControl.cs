@@ -23,18 +23,21 @@ public class CarControl : MonoBehaviour
     private Rigidbody rb;
     private float currentTurnAngle;
 
+    // Tar emot styrning och gas från ML-agenten.
     public void SetAgentInput(float steering, float throttle)
     {
         agentSteering = Mathf.Clamp(steering, -1f, 1f);
         agentThrottle = Mathf.Clamp(throttle, -1f, 1f);
     }
 
+    // Stoppar agentens styrning och gas.
     public void StopAgentInput()
     {
         agentSteering = 0f;
         agentThrottle = 0f;
     }
 
+    // Bromsar alla hjul och stänger av motorkraften.
     public void ApplyBrakes(float brakeForce)
     {
         if (wheels == null)
@@ -56,6 +59,7 @@ public class CarControl : MonoBehaviour
         }
     }
 
+    // Släpper bromsarna på alla hjul.
     public void ReleaseBrakes()
     {
         if (wheels == null)
@@ -74,6 +78,7 @@ public class CarControl : MonoBehaviour
         }
     }
 
+    // Hämtar bilens Rigidbody och ställer in tyngdpunkten.
     private void Start()
     {
         rb = GetComponent<Rigidbody>();
@@ -82,6 +87,7 @@ public class CarControl : MonoBehaviour
             rb.centerOfMass = centerOfMass.localPosition;
     }
 
+    // Uppdaterar bilens styrning, motor och hjul.
     private void FixedUpdate()
     {
         if (rb == null)
@@ -90,7 +96,7 @@ public class CarControl : MonoBehaviour
         float steering = 0f;
         float throttle = 0f;
 
-        // Use either AI input or manual keyboard input.
+        // Väljer mellan agentstyrning och tangentbord.
         if (useAgentInput)
         {
             steering = agentSteering;
@@ -141,17 +147,17 @@ public class CarControl : MonoBehaviour
             if (wheel == null)
                 continue;
 
-            // Front wheels steer.
+            // Framhjulen styr bilen.
             wheel.steerAngle =
                 i < 2 ? currentTurnAngle : 0f;
 
-            // Braking overrides motor torque.
+            // Bromsning har prioritet över motorkraft.
             if (wheel.brakeTorque > 0f)
                 wheel.motorTorque = 0f;
             else
                 wheel.motorTorque = throttle * enginePower;
 
-            // Update the visible wheel mesh.
+            // Uppdaterar hjulens synliga modeller.
             if (wheelMeshes != null &&
                 i < wheelMeshes.Length &&
                 wheelMeshes[i] != null)

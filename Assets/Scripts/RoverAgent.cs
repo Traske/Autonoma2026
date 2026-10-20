@@ -12,6 +12,9 @@ public class RoverAgent : Agent
     public CarControl carControl;
     public Terrain terrain;
 
+    [Header("Obstacle Randomization")]
+    public RandomizeExistingObstacles obstacleRandomizer;
+
     [Header("Random Spawning")]
     public float edgeMargin = 20f;
     public float minTargetDistance = 30f;
@@ -38,6 +41,7 @@ public class RoverAgent : Agent
     private bool isParking;
     private bool hasParked;
 
+    // Hämtar komponenter och förbereder agenten.
     public override void Initialize()
     {
         if (roverRigidbody == null)
@@ -65,22 +69,30 @@ public class RoverAgent : Agent
                 GetTerrainHeight(meetingPoint.position);
         }
 
-        MaxStep = maxDecisions;
+        MaxStep = 0;
     }
 
+    // Startar en ny episod med random positioner.
     public override void OnEpisodeBegin()
     {
         if (roverRigidbody == null || carControl == null)
             return;
-
-        // Randomize the car and target at the start of each episode.
-        RandomizeSpawnPositions();
 
         roverRigidbody.linearVelocity = Vector3.zero;
         roverRigidbody.angularVelocity = Vector3.zero;
 
         carControl.StopAgentInput();
         carControl.ReleaseBrakes();
+
+        if (obstacleRandomizer != null)
+        {
+            obstacleRandomizer.RandomizeObstacles();
+        }
+
+        RandomizeSpawnPositions();
+
+        roverRigidbody.linearVelocity = Vector3.zero;
+        roverRigidbody.angularVelocity = Vector3.zero;
 
         decisionCount = 0;
         stoppedDecisions = 0;
@@ -91,16 +103,18 @@ public class RoverAgent : Agent
         previousDistance = GetDistanceToTarget();
 
         Debug.Log(
-            "New episode: random car and MeetingPoint positions."
+            "New episode: rover, MeetingPoint, and existing obstacles randomized."
         );
     }
 
+    // Hämtar terrängens höjd vid en viss position.
     private float GetTerrainHeight(Vector3 position)
     {
         return terrain.SampleHeight(position)
             + terrain.transform.position.y;
     }
 
+    // Random position på terrängen.
     private Vector3 GetRandomTerrainPosition(float heightOffset)
     {
         Vector3 origin = terrain.transform.position;
@@ -125,6 +139,7 @@ public class RoverAgent : Agent
         return position;
     }
 
+    // Random startpositioner för rovern och målet.
     private void RandomizeSpawnPositions()
     {
         if (terrain == null || meetingPoint == null)
@@ -170,7 +185,6 @@ public class RoverAgent : Agent
             );
         }
 
-        // Random car position and direction.
         roverRigidbody.position = roverSpawn;
 
         roverRigidbody.rotation = Quaternion.Euler(
@@ -179,10 +193,10 @@ public class RoverAgent : Agent
             0f
         );
 
-        // Random MeetingPoint position.
         meetingPoint.position = targetSpawn;
     }
 
+    // Beräknar avståndet mellan rovern och målet.
     private float GetDistanceToTarget()
     {
         Vector3 roverPosition = transform.position;
@@ -194,6 +208,7 @@ public class RoverAgent : Agent
         return Vector3.Distance(roverPosition, targetPosition);
     }
 
+    // Samlar information som agenten använder för beslut.
     public override void CollectObservations(VectorSensor sensor)
     {
         Vector3 direction =
@@ -217,12 +232,13 @@ public class RoverAgent : Agent
         sensor.AddObservation(localVelocity);
     }
 
+    // Styr rovern, hanterar belöningar och bromsar vid målet.
     public override void OnActionReceived(ActionBuffers actions)
     {
         if (roverRigidbody == null || carControl == null)
             return;
 
-        // Keep the rover parked after success.
+        // Håller rovern stilla efter parkering.
         if (hasParked)
         {
             carControl.StopAgentInput();
@@ -238,7 +254,7 @@ public class RoverAgent : Agent
 
         float distance = GetDistanceToTarget();
 
-        // Brake until the rover is stationary.
+        // Bromsar tills rovern står stilla.
         if (isParking)
         {
             carControl.StopAgentInput();
@@ -290,7 +306,7 @@ public class RoverAgent : Agent
             1f
         );
 
-        // Start parking when the target is reached.
+        // Börjar parkera när målet nås.
         if (distance <= successDistance)
         {
             isParking = true;
@@ -304,7 +320,7 @@ public class RoverAgent : Agent
             return;
         }
 
-        // Reduce throttle gradually when approaching.
+        // Minskar gasen nära målet.
         if (distance <= brakingDistance)
         {
             float range = Mathf.Max(
@@ -319,7 +335,6 @@ public class RoverAgent : Agent
             throttle *= throttleScale * throttleScale;
         }
 
-        // Apply brakes only in the closer braking zone.
         float speedNow =
             roverRigidbody.linearVelocity.magnitude;
 
@@ -345,18 +360,9 @@ public class RoverAgent : Agent
 
         previousDistance = distance;
 
-        // Failed episodes reset automatically.
-        if (decisionCount >= maxDecisions)
-        {
-            Debug.Log("FAILED: Decision limit reached.");
-
-            carControl.StopAgentInput();
-            carControl.ReleaseBrakes();
-
-            EndEpisode();
-        }
     }
 
+    // Gör det möjligt att styra rovern manuellt.
     public override void Heuristic(in ActionBuffers actionsOut)
     {
         var actions = actionsOut.ContinuousActions;

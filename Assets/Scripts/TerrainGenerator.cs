@@ -15,12 +15,14 @@ public class TerrainGenerator : MonoBehaviour
     private TerrainData terrainData;
     private float[,] originalHeights;
 
+    // Kopplar terränggenereringen till ML-Agents återställning.
     private void OnEnable()
     {
         if (Academy.IsInitialized)
             Academy.Instance.OnEnvironmentReset += GenerateTerrain;
     }
 
+    // Hämtar terrängdata och genererar den första terrängen.
     private void Start()
     {
         if (terrain == null)
@@ -45,12 +47,14 @@ public class TerrainGenerator : MonoBehaviour
         GenerateTerrain();
     }
 
+    // Tar bort terränggenereringen när skriptet inaktiveras.
     private void OnDisable()
     {
         if (Academy.IsInitialized)
             Academy.Instance.OnEnvironmentReset -= GenerateTerrain;
     }
 
+    // Skapar nya random kullar och dalar med Perlin Noise.
     public void GenerateTerrain()
     {
         if (terrainData == null || originalHeights == null)
